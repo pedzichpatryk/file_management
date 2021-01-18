@@ -13,7 +13,6 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
-import io.flutter.plugin.common.PluginRegistry.Registrar
 import java.io.File
 import java.io.IOException
 
@@ -37,15 +36,15 @@ class FileManagementPlugin: FlutterPlugin, MethodCallHandler {
       "getPlatformVersion" -> {
         result.success("Android ${android.os.Build.VERSION.RELEASE}")
       }
-      "saveFileInGallery" -> {
+      "saveFileInAppDirInGallery" -> {
         val filePath = call.argument<String>("filePath") ?: return
         val name = call.argument<String>("name")
         val extension = call.argument<String>("extension")
 
-        result.success(saveFileToGallery(filePath, name, extension))
+        result.success(saveFileInAppDirInGallery(filePath, name, extension))
       }
-      "getAllFile" -> {
-        result.success(getAllFile())
+      "getAllFileAppDirInGallery" -> {
+        result.success(getAllFileAppDirInGallery())
       }
       else -> {
         result.notImplemented()
@@ -53,11 +52,11 @@ class FileManagementPlugin: FlutterPlugin, MethodCallHandler {
     }
   }
 
-  private fun saveFileToGallery(filePath: String, name: String?, extension: String?): HashMap<String, Any?> {
+  private fun saveFileInAppDirInGallery(filePath: String, name: String?, extension: String?): HashMap<String, Any?> {
     return try  {
       val originalFile = File(filePath)
       val file = generateFile(extension, name)
-      originalFile.copyTo(file)
+      originalFile.copyTo(file, overwrite = true)
 
       val uri = Uri.fromFile(file)
       context.sendBroadcast(Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE, uri))
@@ -67,7 +66,7 @@ class FileManagementPlugin: FlutterPlugin, MethodCallHandler {
     }
   }
 
-  private fun getAllFile(): MutableList<String> {
+  private fun getAllFileAppDirInGallery(): MutableList<String> {
     val storePath =  Environment.getExternalStorageDirectory().absolutePath + File.separator + getApplicationName()
     val appDir = File(storePath)
     if (appDir.exists()) {

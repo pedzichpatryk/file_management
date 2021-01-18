@@ -12,10 +12,10 @@ class FileManagement {
     return version;
   }
 
-  static Future saverFileInGallery(String filePath, String name, String extension, {bool isReturnPathOfIOS = false}) async {
+  static Future saveFileInAppDirInGallery(String filePath, String name, String extension, {bool isReturnPathOfIOS = false}) async {
     assert(filePath != null);
     final result =
-    await _channel.invokeMethod('saveFileInGallery', <String, dynamic>{
+    await _channel.invokeMethod('saveFileInAppDirInGallery', <String, dynamic>{
       'filePath': filePath,
       'name': name,
       'extension': extension,
@@ -24,8 +24,8 @@ class FileManagement {
     return result;  //LinkedHashMap<dynamic, dynamic>
   }
 
-  static Future getAllFile() async {
-    final result = await _channel.invokeMethod("getAllFile");
+  static Future getAllFileAppDirInGallery() async {
+    final result = await _channel.invokeMethod("getAllFileAppDirInGallery");
     return result; //List<dynamic>
   }
 }
