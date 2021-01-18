@@ -11,7 +11,7 @@ public class SwiftFileManagementPlugin: NSObject, FlutterPlugin {
   public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
     if (call.method == "getPlatformVersion") {
         result("iOS " + UIDevice.current.systemVersion)
-    } else if (call.method == "saveFileToGallery") {
+    } else if (call.method == "saveFileInAppDirInGallery") {
         guard let arguments = call.arguments as? [String: Any],
         let path = arguments["file"] as? String,
         let isReturnFilePath = arguments["isReturnPathOfIOS"] as? Bool else { return }
