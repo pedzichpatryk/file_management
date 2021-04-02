@@ -1,20 +1,22 @@
 package eu.programisci.file_management
 
 import android.content.Context
-import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Environment
 import androidx.annotation.NonNull
-
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
 import java.io.File
+import java.io.FileNotFoundException
+import java.io.FileOutputStream
 import java.io.IOException
+
 
 /** FileManagementPlugin */
 class FileManagementPlugin: FlutterPlugin, MethodCallHandler {
@@ -43,8 +45,20 @@ class FileManagementPlugin: FlutterPlugin, MethodCallHandler {
 
         result.success(saveFileInAppDirInGallery(filePath, name, extension))
       }
+      "saveByteArrayToFileInAppDirInGallery" -> {
+        val imageBytes = call.argument<ByteArray>("imageBytes") ?: return
+        val name = call.argument<String>("name")
+        val extension = call.argument<String>("extension")
+
+        result.success(saveByteArrayToFileInAppDirInGallery(imageBytes, name, extension))
+      }
       "getAllFileAppDirInGallery" -> {
         result.success(getAllFileAppDirInGallery())
+      }
+      "getFileByNameFromAppDirInGallery" -> {
+        val name = call.argument<String>("name")
+        val extension = call.argument<String>("extension")
+        result.success(getFileByNameFromAppDirInGallery(extension, name))
       }
       else -> {
         result.notImplemented()
@@ -59,26 +73,72 @@ class FileManagementPlugin: FlutterPlugin, MethodCallHandler {
       originalFile.copyTo(file, overwrite = true)
 
       val uri = Uri.fromFile(file)
-      context.sendBroadcast(Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE, uri))
-      FileResult(uri.toString().isNotEmpty(), uri.toString(), null).toHashMap()
+      MediaScannerConnection.scanFile(context, arrayOf(file.toString()),
+              arrayOf(file.name), null)
+      FileResult(uri.toString(), null).toHashMap()
     }  catch (e: IOException) {
-      FileResult(false, null, e.toString()).toHashMap()
+      FileResult(null, e.toString()).toHashMap()
+    }
+  }
+
+  private fun saveByteArrayToFileInAppDirInGallery(bytes: ByteArray, name: String?, extension: String?) {
+    try {
+      val file = generateFile(extension, name)
+      if (!file.exists()) {
+        file.createNewFile()
+      }
+      val fos = FileOutputStream(file)
+      fos.write(bytes)
+      fos.close()
+      val uri = Uri.fromFile(file)
+      MediaScannerConnection.scanFile(context, arrayOf(file.toString()),
+              arrayOf(file.name), null)
+      FileResult(uri.toString(), null).toHashMap()
+    } catch (e: Exception) {
+      FileResult(null, e.toString()).toHashMap()
     }
   }
 
   private fun getAllFileAppDirInGallery(): MutableList<String> {
-    val storePath =  Environment.getExternalStorageDirectory().absolutePath + File.separator + getApplicationName()
-    val appDir = File(storePath)
-    if (appDir.exists()) {
-      val fileList = appDir.listFiles()?.map { Uri.fromFile(it).toString() }
-      return fileList?.toMutableList() ?: mutableListOf()
+    val picturesStoryPath = context.getExternalFilesDir(Environment.DIRECTORY_PICTURES)
+    val moviesStoryPath = context.getExternalFilesDir(Environment.DIRECTORY_MOVIES)
+    if (picturesStoryPath != null && moviesStoryPath != null) {
+      val pictureAppDir = File(picturesStoryPath.absolutePath, getApplicationName())
+      val movieAppDir = File(moviesStoryPath.absolutePath, getApplicationName())
+      val fileList = mutableListOf<String>()
+      if (pictureAppDir.exists()) {
+        val pictures = pictureAppDir.listFiles()?.map { Uri.fromFile(it).toString() }
+        pictures?.let { fileList.addAll(it) }
+      }
+      if (movieAppDir.exists()) {
+        val movies = movieAppDir.listFiles()?.map { Uri.fromFile(it).toString() }
+        movies?.let { fileList.addAll(it) }
+      }
+      return fileList
     }
     return mutableListOf()
   }
 
+  private fun getFileByNameFromAppDirInGallery(extension: String?, name: String?) {
+    val appDirPath = if ( mutableListOf(".avi", ".wmv", ".mp4", ".mpg", ".mpeg").contains(extension) ) {
+      File(context.getExternalFilesDir(Environment.DIRECTORY_MOVIES)?.absolutePath, getApplicationName()).absolutePath
+    } else {
+      File(context.getExternalFilesDir(Environment.DIRECTORY_PICTURES)?.absolutePath, getApplicationName()).absolutePath
+    }
+    val file = File(appDirPath, extension + name)
+    if (file.exists()) {
+      val uri = Uri.fromFile(file)
+      FileResult(uri.toString(), null).toHashMap()
+    }
+    FileResult(null, FileNotFoundException("File not found exception: ${file.absolutePath}").toString()).toHashMap()
+  }
+
   private fun generateFile(extension: String?, name: String?): File {
-    val storePath =  Environment.getExternalStorageDirectory().absolutePath + File.separator + getApplicationName()
-    val appDir = File(storePath)
+    val appDir = if ( mutableListOf(".avi", ".wmv", ".mp4", ".mpg", ".mpeg").contains(extension) ) {
+      File(context.getExternalFilesDir(Environment.DIRECTORY_MOVIES)?.absolutePath, getApplicationName())
+    } else {
+      File(context.getExternalFilesDir(Environment.DIRECTORY_PICTURES)?.absolutePath, getApplicationName())
+    }
     if (!appDir.exists()) {
       appDir.mkdir()
     }
@@ -114,12 +174,10 @@ class FileManagementPlugin: FlutterPlugin, MethodCallHandler {
 
 }
 
-class FileResult(var isSuccess: Boolean,
-                 var uri: String? = null,
+class FileResult(var uri: String? = null,
                  var errorMessage: String? = null) {
   fun toHashMap(): HashMap<String, Any?> {
     val hashMap = HashMap<String, Any?>()
-    hashMap["isSuccess"] = isSuccess
     hashMap["uri"] = uri
     hashMap["errorMessage"] = errorMessage
     return hashMap
