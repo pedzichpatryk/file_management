@@ -41,6 +41,12 @@ public class SwiftFileManagementPlugin: NSObject, FlutterPlugin {
             createAlbum(fileOperation: FileOperation.getAllFileAppDirInGallery, path: nil)
         } else if (call.method == "getFileByNameFromAppDirInGallery") {
             result(FlutterMethodNotImplemented)
+        } else if (call.method == "shareFiles") {
+            guard let arguments = call.arguments as? [String: Any],
+                  let fileUris = arguments["fileUris"] as? [String],
+                  let mimeTypes = arguments["mimeTypes"] as? [String] else {return}
+            shareFiles(uris: fileUris, mimeTypes: mimeTypes)
+            result(nil)
         } else {
             result(FlutterMethodNotImplemented)
         }
@@ -198,6 +204,19 @@ public class SwiftFileManagementPlugin: NSObject, FlutterPlugin {
             || fileExtension.hasSuffix(".PNG")
             || fileExtension.hasSuffix(".gif")
             || fileExtension.hasSuffix(".GIF")
+    }
+    
+    func shareFiles(uris: [String], mimeTypes: [String]) {
+        var fileUrls = NSMutableArray()
+        for item in uris {
+            var fileurl = NSURL.init(fileURLWithPath: item)
+            fileUrls.add(fileurl)
+        }
+        
+        let activityViewController = UIActivityViewController(activityItems: fileUrls as! [Any], applicationActivities: [])
+        var rootController = UIApplication.shared.keyWindow?.rootViewController
+        activityViewController.popoverPresentationController?.sourceView = rootController?.view
+        rootController?.present(activityViewController, animated: true, completion: nil)
     }
 }
 
