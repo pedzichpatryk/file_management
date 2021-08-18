@@ -2,6 +2,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 class FileManagement {
@@ -37,7 +38,7 @@ class FileManagement {
 
   static Future getAllFileAppDirInGallery() async {
     final result = await _channel.invokeMethod("getAllFileAppDirInGallery");
-    return result; //List<dynamic>
+    return result; //LinkedHashMap<dynamic, dynamic>
   }
 
   static Future getFileByNameFromAppDirInGallery(String name, String extension) async {
@@ -46,5 +47,24 @@ class FileManagement {
       'extension': extension,
     });
     return result; //LinkedHashMap<dynamic, dynamic>
+  }
+
+  static Future deleteFiles(List<String> fileUris) async {
+    assert(fileUris.isNotEmpty);
+    assert(fileUris.every((element) => element.isNotEmpty));
+    final result = await _channel.invokeMethod('deleteFiles', <String, dynamic>{
+      'fileUris': fileUris,
+    });
+    return result;
+  }
+
+  static Future<void> shareFiles(List<String> fileUris, List<String> mimeTypes) async {
+    assert(fileUris.isNotEmpty);
+    assert(fileUris.every((element) => element.isNotEmpty));
+    final result = await _channel.invokeMethod('shareFiles', <String, dynamic>{
+      'fileUris': fileUris,
+      'mimeTypes': mimeTypes,
+    });
+    return result;
   }
 }
