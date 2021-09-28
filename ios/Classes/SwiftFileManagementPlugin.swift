@@ -9,16 +9,20 @@ public class SwiftFileManagementPlugin: NSObject, FlutterPlugin {
         registrar.addMethodCallDelegate(instance, channel: channel)
     }
 
-    var result: FlutterResult?;
+    var result: FlutterResult?
     
-    var assetCollection: PHAssetCollection!;
-    var albumFound : Bool = false;
-    var assetCollectionPlaceholder: PHObjectPlaceholder!;
-    var photosAsset: PHFetchResult<PHAsset>!;
-    var videoAsset: PHFetchResult<PHAsset>!;
+    var assetCollection: PHAssetCollection!
+    var albumFound : Bool = false
+    var assetCollectionPlaceholder: PHObjectPlaceholder!
+    var photosAsset: PHFetchResult<PHAsset>!
+    var videoAsset: PHFetchResult<PHAsset>!
+    let dateFormatter = DateFormatter()
     
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         self.result = result
+        self.dateFormatter.timeZone = TimeZone.current
+        self.dateFormatter.locale = Locale.current
+        self.dateFormatter.dateFormat = "yyyy-MM-dd_HHmmss"
         if (call.method == "getPlatformVersion") {
             result("iOS " + UIDevice.current.systemVersion)
         } else if (call.method == "saveFileInAppDirInGallery") {
@@ -31,8 +35,9 @@ public class SwiftFileManagementPlugin: NSObject, FlutterPlugin {
                 if (UIVideoAtPathIsCompatibleWithSavedPhotosAlbum(path)) {
                     createAlbum(fileOperation: FileOperation.saveVideo, path: path)
                 } else {
+                    convertAndSaveVideo(path)
                     //TODO convert video
-                    result(FlutterMethodNotImplemented)
+//                    result(FlutterMethodNotImplemented)
                 }
             }
         } else if (call.method == "saveByteArrayToFileInAppDirInGallery") {
@@ -47,9 +52,52 @@ public class SwiftFileManagementPlugin: NSObject, FlutterPlugin {
                   let mimeTypes = arguments["mimeTypes"] as? [String] else {return}
             shareFiles(uris: fileUris, mimeTypes: mimeTypes)
             result(nil)
+        } else if (call.method == "deleteFiles") {
+            guard let arguments = call.arguments as? [String: Any],
+                  let fileUris = arguments["fileUris"] as? [String] else {return}
+            deleteFiles(uris: fileUris)
         } else {
             result(FlutterMethodNotImplemented)
         }
+    }
+    
+    func convertAndSaveVideo(_ path: String) {
+        let outputPath = NSSearchPathForDirectoriesInDomains(.cachesDirectory, .userDomainMask, true)
+        let documentsDirectory = outputPath[0]
+        
+        let name = String(path[path.lastIndex(of: "/")!..<path.lastIndex(of: ".")!].dropFirst()) + ".mov"
+        
+        let filePath = URL(fileURLWithPath: documentsDirectory).appendingPathComponent(name).absoluteString
+        let outputURL = URL(string: filePath)
+        convertVideoToLowQuailty(inputURL: URL(fileURLWithPath: path), outputURL: outputURL, handler: { exportSession in
+            if exportSession?.status == .completed {
+                // Video conversation completed
+                let convertFilePath = outputURL!.absoluteString
+                self.createAlbum(fileOperation: FileOperation.saveVideo, path: convertFilePath)
+            } else {
+                print(exportSession?.error)
+            }
+        })
+    }
+    
+    func convertVideoToLowQuailty(inputURL: URL?, outputURL: URL?, handler: @escaping (AVAssetExportSession?) -> Void) {
+        if let anURL = outputURL {
+            try? FileManager.default.removeItem(at: anURL)
+        }
+        var asset: AVURLAsset? = nil
+        if let anURL = inputURL {
+            asset = AVURLAsset(url: anURL, options: nil)
+        }
+        var exportSession: AVAssetExportSession? = nil
+        if let anAsset = asset {
+            exportSession = AVAssetExportSession(asset: anAsset, presetName: AVAssetExportPresetPassthrough)
+        }
+        exportSession?.outputURL = NSURL.fileURL(withPath: outputURL!.path)
+        exportSession?.outputFileType = .mov
+        exportSession?.shouldOptimizeForNetworkUse = true
+        exportSession?.exportAsynchronously(completionHandler: {
+            handler(exportSession)
+        })
     }
     
     func saveVideo(_ path: String) {
@@ -63,8 +111,8 @@ public class SwiftFileManagementPlugin: NSObject, FlutterPlugin {
             if (success) {
                 self.saveResult()
             } else {
-                print(error)
-                self.saveResult(error: "Video file is not save.")
+                print(error?.localizedDescription)
+                self.saveResult(error: error?.localizedDescription)
             }
         })
 //        if !isReturnImagePath {
@@ -100,6 +148,7 @@ public class SwiftFileManagementPlugin: NSObject, FlutterPlugin {
     func saveImage(_ path: String) {
         PHPhotoLibrary.shared().performChanges({
             let assetRequest = PHAssetChangeRequest.creationRequestForAssetFromImage(atFileURL:URL(string: path)!)
+            assetRequest?.creationDate = self.dateFormatter.date(from: String(path[path.lastIndex(of: "/")!..<path.lastIndex(of: ".")!].dropFirst()))
             let assetPlaceholder = assetRequest?.placeholderForCreatedAsset
             self.photosAsset = PHAsset.fetchAssets(in: self.assetCollection, options: nil)
             let albumChangeReques = PHAssetCollectionChangeRequest(for:                         self.assetCollection, assets: self.photosAsset)
@@ -116,15 +165,16 @@ public class SwiftFileManagementPlugin: NSObject, FlutterPlugin {
     
     func getAllFileAppDirInGallery() {
         let assets : PHFetchResult = PHAsset.fetchAssets(in: assetCollection, options: nil)
-        var fileId = [String?]()
+        var fileId = [String:String?]()
         assets.enumerateObjects{(object: AnyObject!, index: Int, stop:UnsafeMutablePointer<ObjCBool>) in
             if object is PHAsset {
                 let asset = object as! PHAsset
                 let options = PHContentEditingInputRequestOptions()
                 options.canHandleAdjustmentData = { (adjustmeta)-> Bool in true }
                 asset.requestContentEditingInput(with: options) { (contentEditingInput, info) in
+                    self.dateFormatter.string(from: contentEditingInput?.creationDate ?? Date())
                     if let urlStr = contentEditingInput?.fullSizeImageURL?.absoluteString {
-                        fileId.append(urlStr)
+                        fileId.updateValue(urlStr, forKey: self.dateFormatter.string(from: contentEditingInput?.creationDate ?? Date()))
                         if (index+1 == assets.count) {
                             self.result?(fileId)
                         }
@@ -153,7 +203,6 @@ public class SwiftFileManagementPlugin: NSObject, FlutterPlugin {
                 self.assetCollectionPlaceholder = createAlbumRequest.placeholderForCreatedAssetCollection
                 }, completionHandler: { success, error in
                     self.albumFound = success
-
                     if (success) {
                         let collectionFetchResult = PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [self.assetCollectionPlaceholder.localIdentifier], options: nil)
                         print(collectionFetchResult)
@@ -217,6 +266,44 @@ public class SwiftFileManagementPlugin: NSObject, FlutterPlugin {
         var rootController = UIApplication.shared.keyWindow?.rootViewController
         activityViewController.popoverPresentationController?.sourceView = rootController?.view
         rootController?.present(activityViewController, animated: true, completion: nil)
+    }
+    
+    func deleteFiles(uris: [String]) {
+        var fileLocalIdentifier: [String] = []
+        
+        let fetchOptions = PHFetchOptions()
+        fetchOptions.predicate = NSPredicate(format: "title = %@", displayName ?? "file_management")
+        let collection : PHFetchResult = PHAssetCollection.fetchAssetCollections(with:.album, subtype: .any, options: fetchOptions)
+        assetCollection = collection.firstObject as! PHAssetCollection
+        
+        let assets : PHFetchResult = PHAsset.fetchAssets(in: assetCollection, options: nil)
+        assets.enumerateObjects{(object: AnyObject!, index: Int, stop:UnsafeMutablePointer<ObjCBool>) in
+            if object is PHAsset {
+                let asset = object as! PHAsset
+                let options = PHContentEditingInputRequestOptions()
+                options.canHandleAdjustmentData = { (adjustmeta)-> Bool in true }
+                asset.requestContentEditingInput(with: options) { (contentEditingInput, info) in
+                    self.dateFormatter.string(from: contentEditingInput?.creationDate ?? Date())
+                    if let urlStr = contentEditingInput?.fullSizeImageURL?.absoluteString {
+                        if uris.contains(urlStr) {
+                            fileLocalIdentifier.append(asset.localIdentifier)
+                        }
+                        if (index+1 == assets.count) {
+                            PHPhotoLibrary.shared().performChanges({
+                                var allPhotos = PHAsset.fetchAssets(withLocalIdentifiers: fileLocalIdentifier, options: nil)
+                                PHAssetChangeRequest.deleteAssets(allPhotos)
+                            }, completionHandler: {success, error in
+                                if success {
+                                    self.saveResult()
+                                } else {
+                                    self.saveResult(error: (error as? NSError)?.description, uri: nil)
+                                }
+                            })
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
